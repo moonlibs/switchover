@@ -1,0 +1,28 @@
+version: '3'
+services:
+    tnt1:
+        image: tarantool/tarantool:1.x-centos7
+        privileged: true
+        env_file: .env
+        volumes:
+            - .:/work
+        command: tarantool /work/init.lua
+    tnt2:
+        image: tarantool/tarantool:1.x-centos7
+        privileged: true
+        env_file: .env
+        depends_on:
+            - tnt1
+        volumes:
+            - .:/work
+        command: tarantool /work/init.lua
+    tnt3:
+        image: tarantool/tarantool:1.x-centos7
+        privileged: true
+        env_file: .env
+        depends_on:
+            - tnt1
+            - tnt2
+        volumes:
+            - .:/work
+        command: tarantool /work/init.lua

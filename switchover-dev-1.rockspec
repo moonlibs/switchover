@@ -1,4 +1,3 @@
-rockspec_format = "3.0"
 package = "switchover"
 version = "dev-1"
 source = {
@@ -18,9 +17,5 @@ external_dependencies = {
     },
 }
 build = {
-	install = {
-		bin = {
-			switchover = "switchover/init.lua",
-		},
-	},
+  type = "builtin",
 }
