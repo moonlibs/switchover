@@ -31,19 +31,22 @@ do
 	rawset(_G, 'rpslimiter', rpslimiter)
 end
 
-box.cfg{
-	listen = 3301,
-	replication = os.getenv('TARANTOOL_REPLICATION'):split(','),
+require 'config' {
+	master_selection_policy = 'etcd.cluster.master',
+	file          = 'instance.lua',
+	on_load       = function(_,cfg)
+		cfg.box.background = false
+	end;
+	mkdir         = true,
+	instance_name = os.getenv('TARANTOOL_INSTANCE_NAME'),
 }
 
-box.cfg{ read_only = box.info.id ~= 1 }
+box.once('access:v1', function()
+	box.schema.user.grant('guest', 'super')
+	box.schema.space.create('test'):create_index('pri')
+end)
 
-if not box.info.ro then
-	box.schema.user.grant('guest', 'super', nil, nil, { if_not_exists = true })
-	box.schema.space.create('test', {if_not_exists = true}):create_index('pri', { if_not_exists = true })
-end
 rawset(_G, 'fiber', require 'fiber')
-
 local log = require 'log'
 
 function _G.runload(rps)
@@ -64,7 +67,7 @@ fiber.create(function()
 		box.ctl.wait_rw()
 
 		local fs = {}
-		for w = 1, 9 do
+		for w = 1, 3 do
 			fs[w] = fiber.create(_G.runload, 100)
 			fs[w]:set_joinable(true)
 		end

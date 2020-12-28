@@ -2,6 +2,7 @@ local Replicaset = {}
 Replicaset.__index = Replicaset
 
 local log = require 'log'
+local fun = require 'fun'
 local json = require 'json'
 
 
@@ -80,11 +81,14 @@ function Replicaset:add_replica(t)
 end
 
 function Replicaset:master()
+	local masters = {}
 	for _, tnt in ipairs(self.replica_list) do
 		if tnt:role() == 'master' then
-			return tnt
+			table.insert(masters, tnt)
 		end
 	end
+	assert(#masters <= 1, "Too many masters in replicaset")
+	return masters[1]
 end
 
 local etonode = function(e)
@@ -197,6 +201,24 @@ function Replicaset:scored()
 	end)
 
 	return self.replica_list
+end
+
+function Replicaset:score(leader)
+	-- how many instances successfully replicates data from leader
+	local downs = fun.iter(leader:followed_downstreams()):map(function(down)
+		return self.replicas[ down.uuid ]
+	end):grep(function(down)
+		return down:replicates_from(leader:uuid())
+	end):totable()
+
+	-- how many instances pushes their data to leader
+	local ups = fun.iter(leader:followed_upstreams()):map(function(up)
+		return self.replicas[ up.uuid ]
+	end):grep(function(up)
+		return up:replicated_by(leader:uuid())
+	end):totable()
+
+	return ups, downs
 end
 
 function Replicaset:topology()

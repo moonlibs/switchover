@@ -2,14 +2,47 @@ local M = {}
 local fun = require 'fun'
 local log = require 'log'
 local json = require 'json'
+local yaml = require 'yaml'
 local fiber = require 'fiber'
+local Tree = require "switchover._tree"
 local Tarantool = require "switchover._tarantool"
 local Replicaset = require "switchover._replicaset"
 json.cfg{ encode_use_tostring = true, encode_invalid_string = true }
 
+
 function M.discovery(args)
-	local endpoints = args.endpoints
 	local tnts = { list = {}, kv = {} }
+	local endpoints = args.endpoints
+
+	local tree
+	if not args.endpoints[1]:match ":" then
+		if not global.etcd then
+			error(("Cannot discovery instance %s without etcd"):format(args.endpoints[1]), 0)
+		end
+		if #args.endpoints ~= 1 then
+			log.error("Too many endpoints to discovery in ETCD. Use cluster_name")
+			os.exit(1)
+		end
+
+		local path = args.endpoints[1]
+
+		tree = Tree {
+			path = path,
+			etcd = global.etcd,
+			tree = assert(global.etcd:getr(path)),
+		}
+		if not tree.instances then
+			error(("Cannot find %s in ETCD"):format(path), 0)
+		end
+
+		log.verbose(yaml.encode(tree.tree))
+
+		local master, master_name = tree:master()
+		log.verbose("ETCD master of replicaset %s is %s (at %s)", path, master_name, master.box.listen)
+
+		endpoints = tree:instances()
+		global.tree = tree
+	end
 
 	local discovery_queue = {
 		deadline = fiber.time() + (args.timeout or 5),
@@ -95,6 +128,12 @@ end
 
 function M.run(args)
 	assert(args.command == "discovery")
+
+	if not args.endpoints and not global.etcd then
+		error("endpoints or etcd must be specified", 0)
+	end
+
+	if not args.endpoints then args.endpoints = {''} end
 
 	local tnts = M.discovery(args)
 	if #tnts.list == 0 then

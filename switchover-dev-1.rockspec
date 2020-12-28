@@ -10,6 +10,7 @@ description = {
 }
 dependencies = {
 	"argparse >= 0.7.1",
+	"net-url",
 }
 external_dependencies = {
     TARANTOOL = {

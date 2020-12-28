@@ -1,0 +1,25 @@
+---
+tarantool:
+  clusters:
+    tnt:
+      master: tnt1
+      replicaset_uuid: '5713e7b4-29d2-4b1c-b6ff-1f2f8bae0d28'
+  instances:
+    tnt1:
+      cluster: tnt
+      box:
+        instance_uuid: '1a154d2c-2aad-4785-b7fe-ae5ad41fc4b6'
+        listen: tnt1:3301
+    tnt2:
+      cluster: tnt
+      box:
+        instance_uuid: '20ebffd7-f40e-4c26-8263-a2382f2edafe'
+        listen: tnt2:3301
+    tnt3:
+      cluster: tnt
+      box:
+        listen: tnt3:3301
+        instance_uuid: 'ce343d92-3640-4146-8655-abb7d3501be7'
+  common:
+    box:
+      log_level: 5
