@@ -2,10 +2,6 @@ local M = {}
 local fun = require 'fun'
 local log = require 'log'
 local json = require 'json'
-local yaml = require 'yaml'
-local fiber = require 'fiber'
-local Tree = require "switchover._tree"
-local Tarantool = require "switchover._tarantool"
 local Replicaset = require "switchover._replicaset"
 json.cfg{ encode_use_tostring = true, encode_invalid_string = true }
 

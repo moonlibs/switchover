@@ -80,14 +80,16 @@ function Replicaset:add_replica(t)
 	end
 end
 
-function Replicaset:master()
+function Replicaset:master(nofail)
 	local masters = {}
 	for _, tnt in ipairs(self.replica_list) do
 		if tnt:role() == 'master' then
 			table.insert(masters, tnt)
 		end
 	end
-	assert(#masters <= 1, "Too many masters in replicaset")
+	if not nofail then
+		assert(#masters <= 1, "Too many masters in replicaset")
+	end
 	return masters[1]
 end
 
@@ -129,15 +131,19 @@ function Replicaset:graph()
 end
 
 function Replicaset:scored()
-	local master = self:master()
+	local master = self:master("nofail")
 	if not master then
 		log.warn("No master found in replicaset: %s", self.uuid)
 	end
 
 	for _, r in ipairs(self.replica_list) do
 		local ds = r:followed_downstreams()
+		local us = r:followed_upstreams()
 		if #ds == 0 then
 			r.no_downstreams = true
+		end
+		if #us == 0 then
+			r.no_upstreams = true
 		end
 		if master and r ~= master and not r:replicates_from(master:uuid()) then
 			r.no_master_upstream = true

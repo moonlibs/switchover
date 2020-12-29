@@ -17,8 +17,11 @@ function Mutex:atomic(opts, func, ...)
 
 	local r = { pcall(func, ...) }
 	if table.remove(r, 1) then
-		self.etcd:rm(self.path, { prevValue = key })
-		return unpack(r)
+		local ok, err = unpack(r)
+		if ok then
+			self.etcd:rm(self.path, { prevValue = key })
+		end
+		return ok, err
 	else
 		return false, r[1]
 	end

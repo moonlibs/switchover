@@ -147,27 +147,8 @@ function Tarantool:_get(opts)
 	return self.cached_info, self.cached_cfg
 end
 
-function Tarantool:wait_clock(lsn, replica_id, timeout)
-	local info, cfg, elapsed = self.conn:eval([==[
-		local lsn, id, timeout = ...
-		local f = require 'fiber'
-		local deadline = f.time()+timeout
-		while (box.info.vclock[id] or 0) < lsn and f.time()<deadline do f.sleep(0.001) end
-		return box.info, box.cfg, f.time()-(deadline-timeout)
-	]==], { lsn, replica_id, timeout })
-
-	self.cached_info = info
-	self.cached_cfg = cfg
-
-	if lsn <= (self:vclock()[replica_id] or 0) then
-		log.info("wait_clock(%s, %s) on %s succeed %s => %.4fs", lsn, replica_id, self:id(),
-			json.encode(self:vclock()), elapsed)
-		return true
-	else
-		log.warn("wait_clock(%s, %s) on %s failed %s => %.4fs", lsn, replica_id, self:id(),
-			json.encode(self:vclock()), elapsed)
-		return false
-	end
+function Tarantool:force_promote()
+	self.cached_info, self.cached_cfg = self.conn:eval "box.cfg{ read_only = false } return box.info, box.cfg"
 end
 
 return setmetatable(Tarantool, { __call = Tarantool.new })

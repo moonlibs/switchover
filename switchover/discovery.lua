@@ -143,12 +143,32 @@ function M.run(args)
 	local replicaset = Replicaset(tnts.list)
 
 	if args.show_graph then
-		print(replicaset:graph())
+		local graphviz = replicaset:graph()
+		if args.link_graph then
+			print('https://dreampuf.github.io/GraphvizOnline/#'..(graphviz:gsub("([^A-Za-z0-9%_%.%-%~])", function(v)
+				return ("%%%02x"):format(v:byte()):upper()
+			end)))
+		else
+			print(graphviz)
+		end
 		return
 	end
 
+	local etcd_master
+	if global.tree then
+		etcd_master = global.tree:master()
+	end
+
 	for _, r in ipairs(replicaset:scored()) do
-		log.info("%d %s", r:id(), r)
+		if etcd_master then
+			if etcd_master.box.instance_uuid == r:uuid() then
+				log.info("%d etcd_master  %s", r:id(), r)
+			else
+				log.info("%d etcd_replica %s", r:id(), r)
+			end
+		else
+			log.info("%d %s", r:id(), r)
+		end
 	end
 end
 

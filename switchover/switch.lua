@@ -2,6 +2,7 @@ local M = {}
 
 local log = require 'log'
 local fun = require 'fun'
+local json = require 'json'
 local Mutex = require 'switchover._mutex'
 local Replicaset = require 'switchover._replicaset'
 
@@ -16,17 +17,38 @@ local function check_replication(opts)
 	assert(opts.max_lag, "check_replication: max_lag is required")
 
 	local vclock = src:vclock({ update = true })
-	return dst:wait_clock(vclock[src:id()] or 0, src:id(), opts.max_lag)
+	local need_lsn = vclock[src:id()] or 0
+
+	local info, cfg, elapsed = dst.conn:eval([==[
+		local lsn, id, timeout = ...
+		local f = require 'fiber'
+		local deadline = f.time()+timeout
+		while (box.info.vclock[id] or 0) < lsn and f.time()<deadline do f.sleep(0.001) end
+		return box.info, box.cfg, f.time()-(deadline-timeout)
+	]==], { need_lsn, src:id(), opts.max_lag }, { timeout = 2*opts.max_lag })
+
+	dst.cached_info = info
+	dst.cached_cfg = cfg
+
+	if need_lsn <= (dst:vclock()[src:id()] or 0) then
+		log.info("wait_clock(%s, %s) on %s succeed %s => %.4fs", need_lsn, src:id(), dst:id(),
+			json.encode(dst:vclock()), elapsed)
+		return true
+	else
+		log.warn("wait_clock(%s, %s) on %s failed %s => %.4fs", need_lsn, src:id(), dst:id(),
+			json.encode(dst:vclock()), elapsed)
+		return false
+	end
 end
 
 local function switch(opts)
 	local src, dst = opts.src, opts.dst
 	assert(opts.max_lag, "check_replication: max_lag is required")
 
-	log.info("Running switchover for:")
-	log.info("src %s", src)
-	log.info("dst %s", dst)
-
+	log.info("Running switch for: %s/%s (%s vclock:%s) -> %s/%s (%s vclock: %s)",
+		src:id(), src:uuid(), src.endpoint, json.encode(src:vclock()),
+		dst:id(), dst:uuid(), dst.endpoint, json.encode(dst:vclock())
+	)
 
 	local info, elapsed = src.conn:eval([==[
 		local dst, lag = ...
@@ -93,11 +115,10 @@ local function switch(opts)
 		end
 
 		log.error("switchover: (data safe) switchover failed. LSN %s:%s wasnt reached", id, lsn)
-		return false, ("lsn wasnot reached in: %.4fs"):format(f.time()-s), box.info
+		return false, ("lsn was not reached in: %.4fs"):format(f.time()-s), box.info
 	]==], { src:info().lsn or 0, src:id(), opts.max_lag }, { timeout = 2*opts.max_lag })
 
 	if info and info.ro == false then
-		log.warn("Switch successfully done.")
 		dst.cached_info = info
 		return true
 	end
@@ -129,38 +150,44 @@ local function switch(opts)
 	return true, err
 end
 
-function M.run(args)
-	assert(args.command == "switch")
-
+function M.resolve_and_discovery(instance, timeout)
 	local endpoints, look_at_etcd
-	if not args.instance:match(":") then
+	if not instance:match(":") then
 		look_at_etcd = true
 		endpoints = { "" }
 	else
-		endpoints = { args.instance }
+		endpoints = { instance }
 	end
 
 	local tnts = require 'switchover.discovery'.discovery {
 		endpoints = endpoints,
-		timeout   = args.timeout,
+		timeout   = timeout,
 	}
 
 	if #tnts.list == 0 then
-		error(("Noone discovered from %s. Node is unreachable?"):format(args.instance), 0)
+		error(("Noone discovered from %s. Node is unreachable?"):format(instance), 0)
 	end
 
 	if look_at_etcd then
-		local instance_info = assert(global.tree:instance(args.instance), ("instance %s wasnt discovered at ETCD"):format(args.instance))
-		args.instance = assert(instance_info.box.listen)
+		local instance_info = assert(global.tree:instance(instance),
+			("instance %s wasnt discovered at ETCD"):format(instance))
+		instance = assert(instance_info.box.listen)
 	end
 
 	local candidate = fun.iter(tnts.list)
-		:grep(function(tnt) return tnt.endpoint == args.instance end)
+		:grep(function(tnt) return tnt.endpoint == instance end)
 		:nth(1)
 
 	if not candidate then
-		error(("Candidate %s was not discovered"):format(args.instance), 0)
+		error(("Candidate %s was not discovered"):format(instance), 0)
 	end
+
+	return tnts, candidate
+end
+
+function M.run(args)
+	assert(args.command == "switch")
+	local tnts, candidate = M.resolve_and_discovery(args.instance, args.timeout)
 
 	local repl = Replicaset(tnts.list)
 	local master = repl:master()
@@ -209,17 +236,28 @@ function M.run(args)
 		return 1
 	end
 
-	local ok, err = Mutex:new(etcd, '/switchover'):atomic({
-			key = ('switchover:%s:%s:%s'):format(repl.uuid, master:uuid(), candidate:uuid()),
-			ttl = 3*args.max_lag,
-		},
-		switch,
-		{
-			src = master,
-			dst = candidate,
-			max_lag = args.max_lag
-		}
-	)
+	local ok, err
+	if etcd then
+		ok, err = Mutex:new(etcd, '/switchover'):atomic({
+				key = ('switchover:%s:%s:%s'):format(repl.uuid, master:uuid(), candidate:uuid()),
+				ttl = 3*args.max_lag,
+			},
+			switch,
+			{
+				src = master,
+				dst = candidate,
+				max_lag = args.max_lag
+			}
+		)
+	else
+		local r = { pcall(switch, { src = master, dst = candidate, max_lag = args.max_lag }) }
+		local pcall_ok = table.remove(r, 1)
+		if pcall_ok then
+			ok, err = unpack(r)
+		else
+			ok, err = pcall_ok, r[1]
+		end
+	end
 
 	if not err then
 		log.info("Switch %s/%s -> %s/%s was successfully done. Performing discovery",

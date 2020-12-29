@@ -12,6 +12,7 @@ local switchover = require 'argparse'()
 	:description "Tarantool master <-> replica switchover"
 	:epilog "Home: https://gitlab.com/ochaton/tarantool-switchover"
 	:add_help_command()
+	:add_complete()
 	:help_vertical_space(1)
 	:help_description_margin(40)
 
@@ -47,23 +48,35 @@ discovery:flag "-g" "--show-graph"
 	:description "Prints topology to the console in dot format"
 	:default(false)
 
+discovery:flag "-l" "--link-graph"
+	:target "link_graph"
+	:description "Build url to online visualization"
+	:default(false)
+
 discovery:argument "endpoints"
 	:args "0-1"
 	:description "host:port to tarantool"
 	:convert(comma_split)
 
-local attach = switchover:command "attach"
-	:summary "Attaches to given endpoints and prints vclock and replication down to console"
+local promote = switchover:command "promote"
+	:summary "Promotes given instance to master"
+	:description "Fail when master exists in replicaset"
 
-attach:option "-d" "--discovery"
-	:description "discovery timeout (in seconds)"
-	:show_default(true)
-	:default(0.1)
-
-attach:argument "instances"
+promote:argument "instance"
 	:args(1)
-	:description "List of instances you want to monitor (separated by ,)"
-	:convert(comma_split)
+	:description "Choose instance to become master"
+
+promote:option "--max-lag"
+	:target "max_lag"
+	:description "Maximum allowed Replication lag of the future master (in seconds)"
+	:show_default(true)
+	:default(1)
+
+promote:option "-t" "--timeout"
+	:target "timeout"
+	:description "Timeout of the promote (in seconds)"
+	:show_default(true)
+	:default(5)
 
 local switch = switchover:command "switch"
 	:summary "Switches current master to given instance"
@@ -75,7 +88,7 @@ switch:argument "instance"
 
 switch:option "--max-lag"
 	:target "max_lag"
-	:description "Maximum available Replication lag of the future master (in seconds)"
+	:description "Maximum allowed Replication lag of the future master (in seconds)"
 	:show_default(true)
 	:default(1)
 
@@ -85,9 +98,16 @@ switch:option "-t" "--timeout"
 	:show_default(true)
 	:default(5)
 
-local heal = switchover:command "heal"
+switchover:command "heal"
 	:summary "Heals ETCD /cluster/master"
 	:description "Sets current master of replicaset into ETCD if replication is good"
+
+local restart_replication = switchover:command "restart-replication"
+	:summary "Restarts replication on choosen instance"
+
+restart_replication:argument "instance"
+	:args(1)
+	:description "Name or address of the instance"
 
 rawset(_G, 'global', {
 	start_at = require 'fiber'.time(),
@@ -101,6 +121,12 @@ if args.config and fio.stat(args.config) then
 		log.verbose("Setting %s to %s", k, json.encode(v))
 		args[k] = v
 	end
+end
+
+if args.link_graph and not args.show_graph then
+	log.error("--link-graph must be used with --show-graph")
+	print(switchover:get_help())
+	os.exit(1)
 end
 
 if args.etcd then
