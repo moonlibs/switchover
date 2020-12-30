@@ -15,21 +15,28 @@ function M.discovery(args)
 	local endpoints = args.endpoints
 
 	local tree
-	if not args.endpoints[1]:match ":" then
+	if #args.endpoints == 0 or not args.endpoints[1]:match ":" then
 		if not global.etcd then
 			error(("Cannot discovery instance %s without etcd"):format(args.endpoints[1]), 0)
 		end
-		if #args.endpoints ~= 1 then
+		if #args.endpoints > 1 then
 			log.error("Too many endpoints to discovery in ETCD. Use cluster_name")
 			os.exit(1)
 		end
 
 		local path = args.endpoints[1]
+		log.info("Fetching %s from ETCD", path)
+
+		local etcd_tree = global.etcd:getr(path)
+		if not etcd_tree then
+			log.error("Path %s not found in ETCD: fullpath: %s/%s", path, global.etcd.prefix, path)
+			os.exit(1)
+		end
 
 		tree = Tree {
 			path = path,
 			etcd = global.etcd,
-			tree = assert(global.etcd:getr(path)),
+			tree = etcd_tree,
 		}
 		if not tree.instances then
 			error(("Cannot find %s in ETCD"):format(path), 0)
@@ -45,7 +52,7 @@ function M.discovery(args)
 	end
 
 	local discovery_queue = {
-		deadline = fiber.time() + (args.timeout or 5),
+		deadline = fiber.time() + (args.discovery_timeout or 5),
 		chan = fiber.channel(math.max(#endpoints, 3)),
 		count = 0,
 		seen = {},

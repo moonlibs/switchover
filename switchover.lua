@@ -10,7 +10,7 @@ local switchover = require 'argparse'()
 	:name "switchover"
 	:command_target "command"
 	:description "Tarantool master <-> replica switchover"
-	:epilog "Home: https://gitlab.com/ochaton/tarantool-switchover"
+	:epilog "Home: https://gitlab.com/ochaton/switchover"
 	:add_help_command()
 	:add_complete()
 	:help_vertical_space(1)
@@ -34,11 +34,15 @@ switchover:flag "-v" "--verbose"
 	:count "0-2"
 	:target "verbose"
 
+switchover:option "--cluster"
+	:target "cluster"
+	:description "Name of replicaset in ETCD"
+
 local discovery = switchover:command "discovery"
 	:summary "Discovers all members of the replicaset"
 
-discovery:option "-t" "--timeout"
-	:target "timeout"
+discovery:option "-d" "--discovery-timeout"
+	:target "discovery_timeout"
 	:description "Discovery timeout (in seconds)"
 	:show_default(true)
 	:default(5)
@@ -78,6 +82,12 @@ promote:option "-t" "--timeout"
 	:show_default(true)
 	:default(5)
 
+promote:flag "-r" "--with-reload"
+	:target "with_reload"
+	:description "In case of successfull promote calls package.reload on new master"
+	:show_default(true)
+	:default(false)
+
 local switch = switchover:command "switch"
 	:summary "Switches current master to given instance"
 	:description "Fail when no master found in replicaset"
@@ -98,16 +108,38 @@ switch:option "-t" "--timeout"
 	:show_default(true)
 	:default(5)
 
+switch:flag "--no-etcd"
+	:target "no_etcd"
+	:description "Disables ETCD mutexes and discovery"
+	:default(false)
+	:show_default(true)
+
+switch:flag "-r" "--with-reload"
+	:target "with_reload"
+	:description "In case of successfull promote calls package.reload on new master"
+	:show_default(true)
+	:default(false)
+
 switchover:command "heal"
 	:summary "Heals ETCD /cluster/master"
 	:description "Sets current master of replicaset into ETCD if replication is good"
 
-local restart_replication = switchover:command "restart-replication"
+local restart_replication = switchover:command "restart-replication" "rr"
 	:summary "Restarts replication on choosen instance"
 
 restart_replication:argument "instance"
 	:args(1)
 	:description "Name or address of the instance"
+
+local package_reload = switchover:command "package-reload" "pr"
+	:summary "Reload replication on given instance"
+
+package_reload:argument "instance"
+	:args "0-1"
+	:description "Name or address of the instance"
+
+package_reload:option "-a" "--all"
+	:description "Discovers all instances and calls package.reload on every node"
 
 rawset(_G, 'global', {
 	start_at = require 'fiber'.time(),
@@ -119,7 +151,9 @@ log.level(5+args.verbose)
 if args.config and fio.stat(args.config) then
 	for k, v in pairs(yaml.decode(assert(io.open(args.config, "r")):read("*all"))) do
 		log.verbose("Setting %s to %s", k, json.encode(v))
-		args[k] = v
+		if args[k] == nil then
+			args[k] = v
+		end
 	end
 end
 
@@ -130,16 +164,19 @@ if args.link_graph and not args.show_graph then
 end
 
 if args.etcd then
+	local etcd_prefix
 	if type(args.etcd) == 'string' then
 		args.etcd = {
 			prefix = args.etcd_prefix,
 			timeout = args.etcd_timeout,
 			endpoints = args.etcd:split(","),
 		}
+	else
+		etcd_prefix = ("%s/%s"):format(args.etcd.prefix, args.etcd_prefix and args.etcd_prefix or '')
 	end
 	_G.global.etcd = require 'switchover._etcd'.new {
 		endpoints    = args.etcd.endpoints,
-		prefix       = args.etcd.prefix,
+		prefix       = etcd_prefix and etcd_prefix or args.etcd.prefix,
 		timeout      = args.etcd.timeout,
 		boolean_auto = true,
 		integer_auto = true,

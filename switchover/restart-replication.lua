@@ -1,11 +1,14 @@
 local M = {}
+local log = require 'log'
 
 function M.run(args)
 	assert(args.command == "restart-replication")
 
 	local _, instance = require "switchover.switch".resolve_and_discovery(
-		args.instance, args.timeout
+		args.instance, args.timeout, args.cluster
 	)
+
+	log.info("Restarting replication on %s", instance)
 
 	instance.conn:eval [[
 		repl = box.cfg.replication

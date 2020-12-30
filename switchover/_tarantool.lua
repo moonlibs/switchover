@@ -142,13 +142,27 @@ end
 
 function Tarantool:_get(opts)
 	if not self.cached_info or not self.cached_cfg or (opts or {}).update then
-		self.cached_info, self.cached_cfg = self.conn:eval "return box.info, box.cfg"
+		self.cached_info, self.cached_cfg, self.can_package_reload = self.conn:eval [[
+			return box.info, box.cfg, type(package.reload) == 'function'
+		]]
 	end
 	return self.cached_info, self.cached_cfg
 end
 
 function Tarantool:force_promote()
 	self.cached_info, self.cached_cfg = self.conn:eval "box.cfg{ read_only = false } return box.info, box.cfg"
+end
+
+function Tarantool:package_reload()
+	if not self.can_package_reload then
+		error(("Instance %s does not support package.reload"):format(self.endpoint), 0)
+	end
+
+	log.info("Calling package.reload on %s", self)
+	self.cached_info, self.cached_cfg = self.conn:eval [[
+		package.reload()
+		return box.info, box.cfg
+	]]
 end
 
 return setmetatable(Tarantool, { __call = Tarantool.new })

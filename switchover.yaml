@@ -1,0 +1,11 @@
+---
+etcd:
+  prefix: /cloud
+  timeout: 3
+  endpoints:
+    - http://etcd0:2379
+    - http://etcd1:2379
+    - http://etcd2:2379
+max_lag: 3
+with_reload: true
+discovery_timeout: 5

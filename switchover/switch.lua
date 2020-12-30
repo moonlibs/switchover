@@ -150,11 +150,14 @@ local function switch(opts)
 	return true, err
 end
 
-function M.resolve_and_discovery(instance, timeout)
+function M.resolve_and_discovery(instance, timeout, cluster_name)
 	local endpoints, look_at_etcd
 	if not instance:match(":") then
 		look_at_etcd = true
-		endpoints = { "" }
+		endpoints = { cluster_name }
+		if not cluster_name then
+			error("You must specify cluster_name (--cluster option)", 0)
+		end
 	else
 		endpoints = { instance }
 	end
@@ -187,7 +190,7 @@ end
 
 function M.run(args)
 	assert(args.command == "switch")
-	local tnts, candidate = M.resolve_and_discovery(args.instance, args.timeout)
+	local tnts, candidate = M.resolve_and_discovery(args.instance, args.timeout, args.cluster)
 
 	local repl = Replicaset(tnts.list)
 	local master = repl:master()
@@ -272,6 +275,12 @@ function M.run(args)
 				etcd_master_name = etcd_master_name,
 				candidate_uuid = candidate:uuid(),
 			}
+
+			global.tree:refresh()
+		end
+
+		if args.with_reload and candidate.can_package_reload then
+			candidate:package_reload()
 		end
 	elseif ok then
 		log.warn("Switchover failed but replicaset is consistent. Reason: %s", err)

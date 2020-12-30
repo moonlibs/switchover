@@ -15,7 +15,7 @@ function M.run(args)
 	assert(args.command == "promote")
 
 	local tnts, candidate = require "switchover.switch".resolve_and_discovery(
-		args.instance, args.timeout
+		args.instance, args.timeout, args.cluster
 	)
 
 	local repl = Replicaset(tnts.list)
@@ -70,6 +70,10 @@ function M.run(args)
 				etcd_master_name = etcd_master_name,
 				candidate_uuid = candidate:uuid(),
 			}
+		end
+
+		if args.with_reload then
+			candidate:package_reload()
 		end
 	elseif ok then
 		log.warn("Promote failed but replicaset is consistent. Reason: %s", err)
