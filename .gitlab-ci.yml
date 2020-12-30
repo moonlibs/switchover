@@ -1,6 +1,7 @@
 stages:
   - test
   - build
+  - upload
 
 linter:
   image: tarantool/tarantool:1.10.8
@@ -31,3 +32,12 @@ build:
   artifacts:
     paths:
       - build/
+
+upload:
+  stage: upload
+  script:
+    - export PKG_VERSION="$(git describe --tags | sed -e 's/-/./g' -e 's/\.[^\.]*$//g')"
+    - 'cd build; for f in *.rpm; do curl -v -s -H "JOB-TOKEN: $CI_JOB_TOKEN" -T "$f" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/switchover/${PKG_VERSION}/$f"; done'
+  only:
+    - ci
+    - master
