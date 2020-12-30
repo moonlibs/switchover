@@ -1,0 +1,33 @@
+stages:
+  - test
+  - build
+
+linter:
+  image: tarantool/tarantool:1.10.8
+  stage: test
+  script:
+      - luarocks install https://raw.githubusercontent.com/tarantool/luacheck/master/luacheck-scm-1.rockspec
+      - luacheck .
+prebuild:
+  stage: test
+  script:
+    - git describe --long
+    - git clone --recurse-submodules https://github.com/packpack/packpack.git packpack
+  artifacts:
+    paths:
+      - packpack/
+
+build:
+  image: docker:latest
+  stage: build
+  services:
+    - docker:dind
+  variables:
+    OS: centos
+    DIST: 7
+    PRODUCT: tarantool-switchover
+  script:
+    - packpack/packpack
+  artifacts:
+    paths:
+      - build/
