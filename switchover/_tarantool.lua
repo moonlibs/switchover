@@ -6,6 +6,7 @@ local fun = require 'fun'
 local json = require 'json'
 local fiber = require 'fiber'
 local netbox = require 'net.box'
+local v = require 'semver'
 
 function Tarantool:__tostring()
 	return ("Tarantool %s [%s/%s] vclock:%s %-7s replication: %s"):format(
@@ -66,6 +67,10 @@ end
 
 function Tarantool:cluster_uuid(opts)
 	return self:info(opts).cluster.uuid
+end
+
+function Tarantool:version(opts)
+	return v(self:info(opts).version)
 end
 
 function Tarantool:vclock(opts)
@@ -142,14 +147,17 @@ end
 
 function Tarantool:_get(opts)
 	if not self.cached_info or not self.cached_cfg or (opts or {}).update then
-		self.cached_info, self.cached_cfg, self.can_package_reload = self.conn:eval [[
-			return box.info, box.cfg, type(package.reload) == 'function'
+		self.cached_info, self.cached_cfg, self.can_package_reload, self.has_vshard = self.conn:eval [[
+			return box.info, box.cfg, type(package.reload) == 'function', rawget(_G, 'vshard') ~= nil
 		]]
 	end
 	return self.cached_info, self.cached_cfg
 end
 
 function Tarantool:force_promote()
+	if self.has_vshard then
+		error("Cant force_promote: instance is in vshard cluster", 2)
+	end
 	self.cached_info, self.cached_cfg = self.conn:eval "box.cfg{ read_only = false } return box.info, box.cfg"
 end
 

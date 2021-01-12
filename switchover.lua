@@ -14,7 +14,7 @@ local switchover = require 'argparse'()
 	:add_help_command()
 	:add_complete()
 	:help_vertical_space(1)
-	:help_description_margin(40)
+	:help_description_margin(60)
 
 switchover:option "-c" "--config"
 	:target "config"
@@ -27,7 +27,7 @@ switchover:option "-e" "--etcd"
 
 switchover:option "-p" "--prefix"
 	:target "etcd_prefix"
-	:description "Prefix of the replicaset in ETCD"
+	:description "Prefix to configuration of clusters in ETCD"
 
 switchover:flag "-v" "--verbose"
 	:description "Verbosity level"
@@ -59,7 +59,7 @@ discovery:flag "-l" "--link-graph"
 
 discovery:argument "endpoints"
 	:args "0-1"
-	:description "host:port to tarantool"
+	:description "host:port to tarantool or name of replicaset"
 	:convert(comma_split)
 
 local promote = switchover:command "promote"
@@ -88,9 +88,15 @@ promote:flag "-r" "--with-reload"
 	:show_default(true)
 	:default(false)
 
+promote:flag "--no-etcd"
+	:target "no_etcd"
+	:description "Disables ETCD mutexes and discovery"
+	:default(false)
+	:show_default(true)
+
 local switch = switchover:command "switch"
 	:summary "Switches current master to given instance"
-	:description "Fail when no master found in replicaset"
+	:description "Switch fails when no master found in replicaset. Supports only tarantool >= 1.10.0"
 
 switch:argument "instance"
 	:args(1)
@@ -120,9 +126,13 @@ switch:flag "-r" "--with-reload"
 	:show_default(true)
 	:default(false)
 
-switchover:command "heal"
+local heal = switchover:command "heal"
 	:summary "Heals ETCD /cluster/master"
 	:description "Sets current master of replicaset into ETCD if replication is good"
+
+heal:argument "cluster"
+	:args(1)
+	:description "Name of the replicaset"
 
 local restart_replication = switchover:command "restart-replication" "rr"
 	:summary "Restarts replication on choosen instance"

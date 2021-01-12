@@ -14,7 +14,7 @@ end
 function M.run(args)
 	assert(args.command == "promote")
 
-	local tnts, candidate = require "switchover.switch".resolve_and_discovery(
+	local tnts, candidate = require "switchover.discovery".resolve_and_discovery(
 		args.instance, args.timeout, args.cluster
 	)
 
@@ -36,17 +36,16 @@ function M.run(args)
 
 	-- Check that all nodes may receive data from candidate
 	log.info("Candidate %s can be next leader", candidate)
-	-- TODO: work with ETCD
-	local etcd = _G.global.etcd
 
+	local etcd = _G.global.etcd
 	if not etcd and not args.no_etcd then
 		log.error("ETCD cfg is required")
 		return 1
 	end
 
 	local ok, err
-	if etcd then
-		ok, err = Mutex:new(etcd, '/switchover'):atomic({
+	if etcd and not args.no_etcd then
+		ok, err = Mutex:new(etcd, global.tree:cluster_path()..'/switchover'):atomic({
 				key = ('switchover:%s:%s'):format(repl.uuid, candidate:uuid()),
 				ttl = 3*args.max_lag,
 			},

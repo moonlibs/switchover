@@ -10,6 +10,7 @@ description = {
 dependencies = {
    "argparse",
    "net-url",
+   "semver >= 1.2",
 }
 build = {
    type = "builtin",

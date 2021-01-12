@@ -133,6 +133,44 @@ function M.discovery(args)
 	return tnts
 end
 
+function M.resolve_and_discovery(instance, timeout, cluster_name)
+	local endpoints, look_at_etcd
+	if not instance:match(":") then
+		look_at_etcd = true
+		endpoints = { cluster_name }
+		if not cluster_name then
+			error("You must specify cluster_name (--cluster option)", 0)
+		end
+	else
+		endpoints = { instance }
+	end
+
+	local tnts = M.discovery {
+		endpoints = endpoints,
+		timeout   = timeout,
+	}
+
+	if #tnts.list == 0 then
+		error(("Noone discovered from %s. Node is unreachable?"):format(instance), 0)
+	end
+
+	if look_at_etcd then
+		local instance_info = assert(global.tree:instance(instance),
+			("instance %s wasnt discovered at ETCD"):format(instance))
+		instance = assert(instance_info.box.listen)
+	end
+
+	local candidate = fun.iter(tnts.list)
+		:grep(function(tnt) return tnt.endpoint == instance end)
+		:nth(1)
+
+	if not candidate then
+		error(("Candidate %s was not discovered"):format(instance), 0)
+	end
+
+	return tnts, candidate
+end
+
 function M.run(args)
 	assert(args.command == "discovery")
 

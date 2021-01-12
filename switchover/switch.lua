@@ -5,6 +5,8 @@ local fun = require 'fun'
 local json = require 'json'
 local Mutex = require 'switchover._mutex'
 local Replicaset = require 'switchover._replicaset'
+local v = require 'semver'
+local minimal_supported_version = v'1.10.0'
 
 
 local function fail(candidate)
@@ -66,7 +68,10 @@ local function switch(opts)
 		log.warn("switchover: Waiting for replication[%s].downstream.vclock[%s] == %s (box.info.lsn)",
 			dst, box.info.id, box.info.lsn)
 
-		while (box.info.replication[dst].downstream.vclock[ box.info.id ] < box.info.lsn) and (f.time() < deadline) do
+		while f.time() < deadline do
+			if box.info.lsn <= (box.info.replication[dst].downstream.vclock[box.info.id] or 0) then
+				break
+			end
 			f.sleep(math.min(
 				deadline - f.time(),
 				math.max(0.005, box.info.replication[dst].upstream.lag) )
@@ -97,12 +102,13 @@ local function switch(opts)
 	info, elapsed = dst.conn:eval([==[
 		local lsn, id, timeout = ...
 		local log = require 'log'
+		local clock = require 'clock'
 		local f = require 'fiber' local s = f.time()
 		local deadline = s+timeout
 
-		while (box.info.vclock[id] or 0) < lsn and f.time() < deadline do f.sleep(0.001) end
+		while (box.info.vclock[id] or 0) < lsn and clock.time() < deadline do f.sleep(0.001) end
 
-		if deadline < f.time() then
+		if deadline < clock.time() then
 			log.warn("switchover: (data safe) Timed out reached. Node wont be promoted to master")
 			return false, ("timed out. no switch were done: %.4fs"):format(f.time()-s), box.info
 		end
@@ -120,12 +126,13 @@ local function switch(opts)
 
 	if info and info.ro == false then
 		dst.cached_info = info
+		log.info("Candidate is in RW state took: %.4fs", elapsed)
 		return true
 	end
 
 	-- Switchover failed
 	local err = elapsed
-	log.error("Waiting vlock on replica failed: %s", err)
+	log.error("Waiting vclock on replica failed: %s", err)
 
 	if dst:info{ update = true }.ro ~= true then
 		return false, "Can't rollback the switchover. Candidate is already in RW"
@@ -150,47 +157,10 @@ local function switch(opts)
 	return true, err
 end
 
-function M.resolve_and_discovery(instance, timeout, cluster_name)
-	local endpoints, look_at_etcd
-	if not instance:match(":") then
-		look_at_etcd = true
-		endpoints = { cluster_name }
-		if not cluster_name then
-			error("You must specify cluster_name (--cluster option)", 0)
-		end
-	else
-		endpoints = { instance }
-	end
-
-	local tnts = require 'switchover.discovery'.discovery {
-		endpoints = endpoints,
-		timeout   = timeout,
-	}
-
-	if #tnts.list == 0 then
-		error(("Noone discovered from %s. Node is unreachable?"):format(instance), 0)
-	end
-
-	if look_at_etcd then
-		local instance_info = assert(global.tree:instance(instance),
-			("instance %s wasnt discovered at ETCD"):format(instance))
-		instance = assert(instance_info.box.listen)
-	end
-
-	local candidate = fun.iter(tnts.list)
-		:grep(function(tnt) return tnt.endpoint == instance end)
-		:nth(1)
-
-	if not candidate then
-		error(("Candidate %s was not discovered"):format(instance), 0)
-	end
-
-	return tnts, candidate
-end
-
 function M.run(args)
 	assert(args.command == "switch")
-	local tnts, candidate = M.resolve_and_discovery(args.instance, args.timeout, args.cluster)
+	local tnts, candidate = require "switchover.discovery".resolve_and_discovery(
+		args.instance, args.timeout, args.cluster)
 
 	local repl = Replicaset(tnts.list)
 	local master = repl:master()
@@ -209,7 +179,6 @@ function M.run(args)
 		log.warn("Master    %s", master)
 		fail(candidate)
 	end
-
 	if candidate.no_downstreams and not args.no_check_downstreams then
 		log.error("Candidate '%s' does not have live downstreams", candidate.endpoint)
 		log.warn("Candidate %s", candidate)
@@ -219,6 +188,26 @@ function M.run(args)
 	-- Check that all nodes may receive data from candidate
 	log.info("Candidate %s can be next leader (current: %s/%s). Running replication check (safe)",
 		candidate, master:id(), master.endpoint)
+
+	if master.has_vshard then
+		log.error("Can't do switch because master is in vshard cluster")
+		return 1
+	end
+	if candidate.has_vshard then
+		log.error("Can't do switch because candidate is in vshard cluster")
+		return 1
+	end
+
+	if master:version() < minimal_supported_version then
+		log.error("Can't switch because master has unsupported Tarantool version: %s (required at least %s)",
+			master:version(), minimal_supported_version)
+		return 1
+	end
+	if candidate:version() < minimal_supported_version then
+		log.error("Can't switch because candidate has unsupported Tarantool version: %s (required at least %s)",
+			candidate:version(), minimal_supported_version)
+		return 1
+	end
 
 	if not check_replication {src = master, dst = candidate, max_lag = args.max_lag} then
 		log.error("Live replication monitoring failed %s -> %s",
@@ -231,7 +220,6 @@ function M.run(args)
 		candidate:id(), candidate.endpoint,
 		candidate:info().replication[master:id()].upstream.lag)
 
-	-- TODO: work with ETCD
 	local etcd = _G.global.etcd
 
 	if not etcd and not args.no_etcd then
@@ -240,8 +228,8 @@ function M.run(args)
 	end
 
 	local ok, err
-	if etcd then
-		ok, err = Mutex:new(etcd, '/switchover'):atomic({
+	if etcd and not args.no_etcd then
+		ok, err = Mutex:new(etcd, global.tree:cluster_path()..'/switchover'):atomic({
 				key = ('switchover:%s:%s:%s'):format(repl.uuid, master:uuid(), candidate:uuid()),
 				ttl = 3*args.max_lag,
 			},

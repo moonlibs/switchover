@@ -18,7 +18,6 @@ Handy script to perform consistent switch of Master role in Tarantool replicaset
 %setup -q -n %{name}-%{version}
 
 %build
-#make build
 
 %define luapkgdir %{_datadir}/lua/5.1
 %install
@@ -30,7 +29,7 @@ rm -vf %{buildroot}%{luapkgdir}/switchover.lua
 rm -rvf %{buildroot}/usr/lib64/luarocks
 
 install -dm 0755 %{buildroot}/etc/switchover
-install -pm 0644 switchover.yaml %{buildroot}/etc/switchover/config.yaml
+install -pm 0644 switchover.yaml %{buildroot}/etc/switchover/config.yaml.example
 
 %files
 %{_bindir}/switchover
@@ -38,7 +37,7 @@ install -pm 0644 switchover.yaml %{buildroot}/etc/switchover/config.yaml
 %{luapkgdir}/switchover/*.lua
 %{luapkgdir}/argparse.lua
 %{luapkgdir}/net/url.lua
-%config(noreplace) /etc/switchover/config.yaml
+%config(noreplace) /etc/switchover/config.yaml.example
 %doc README.md
 %{!?_licensedir:%global license %doc}
 %license LICENSE

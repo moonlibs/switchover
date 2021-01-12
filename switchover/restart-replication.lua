@@ -4,7 +4,7 @@ local log = require 'log'
 function M.run(args)
 	assert(args.command == "restart-replication")
 
-	local _, instance = require "switchover.switch".resolve_and_discovery(
+	local _, instance = require "switchover.discovery".resolve_and_discovery(
 		args.instance, args.timeout, args.cluster
 	)
 

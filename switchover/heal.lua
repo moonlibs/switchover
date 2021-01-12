@@ -52,8 +52,8 @@ function M.run(args)
 	end
 
 	local tnts = require 'switchover.discovery'.discovery {
-		endpoints = {''},
-		timeout   = args.timeout,
+		endpoints = { args.cluster },
+		timeout   = timeout,
 	}
 
 	if #tnts.list == 0 then

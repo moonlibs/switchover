@@ -5,7 +5,7 @@ local Replicaset = require "switchover._replicaset"
 function M.run(args)
 	assert(args.command == "package-reload")
 
-	local tnts, instance = require "switchover.switch".resolve_and_discovery(
+	local tnts, instance = require "switchover.discovery".resolve_and_discovery(
 		args.instance or '', args.timeout, args.cluster
 	)
 

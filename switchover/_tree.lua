@@ -4,6 +4,7 @@ local Tree = {}
 Tree.__index = Tree
 
 local fun = require 'fun'
+local fio = require 'fio'
 
 function Tree:new(opts)
 	local tree = assert(opts.tree, "Tree: .tree is required")
@@ -32,6 +33,11 @@ function Tree:by_uuid(instance_uuid)
 		return
 	end
 	return self:instance(name)
+end
+
+function Tree:cluster_path(cluster_name)
+	local master = self:master(cluster_name)
+	return fio.pathjoin(self.path, 'clusters', assert(master.cluster))
 end
 
 function Tree:master(cluster_name)
