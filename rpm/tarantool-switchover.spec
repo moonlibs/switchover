@@ -37,6 +37,7 @@ install -pm 0644 switchover.yaml %{buildroot}/etc/switchover/config.yaml.example
 %{luapkgdir}/switchover/*.lua
 %{luapkgdir}/argparse.lua
 %{luapkgdir}/net/url.lua
+%{luapkgdir}/semver.lua
 %config(noreplace) /etc/switchover/config.yaml.example
 %doc README.md
 %{!?_licensedir:%global license %doc}
