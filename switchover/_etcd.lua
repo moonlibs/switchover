@@ -372,6 +372,12 @@ function M:rm(path, flags, options)
 	return __assert(self:request("DELETE", "/v2/keys"..self:_path(path), flags, options))
 end
 
+function M:rmrf(path, options)
+	assert(path, "path is required")
+	options = options or {}
+	return __assert(self:request("DELETE", "/v2/keys"..self:_path(path), { recursive = true, force = true }, options))
+end
+
 --- Sets value by path into ETCD.
 -- @param path path to the key
 -- @param value value of the key
@@ -380,6 +386,51 @@ end
 -- @return etcd API response
 function M:set(path, value, path_options, options)
 	return __assert(self:request("PUT", "/v2/keys"..self:_path(path), deepmerge(path_options, { value = value }), options))
+end
+
+--- Fills up the ETCD config.
+-- PUTs structure key be key using CaS prevExists = false denying clearing previous value.
+-- @param path path to subtree
+-- @param subtree lua table describes subtree
+-- @param options options of the request
+-- @return etcd API response
+function M:fill(path, subtree, options)
+	path = path:gsub("/+$", "/")
+	options = options or {}
+
+	local flat = {}
+	local stack = { subtree }
+	local map = { [subtree] = path }
+	repeat
+		local node = table.remove(stack)
+		for key, sub in pairs(node) do
+			local fullpath = map[node] .. "/" .. key
+			if map[sub] then
+				error(("Caught recursive subtree. Key '%s' can be reached via '%s'"):format(map[sub], fullpath), 2)
+			end
+			if type(sub) == 'table' then
+				map[sub] = fullpath
+				table.insert(stack, sub)
+			else
+				flat[fullpath] = tostring(sub)
+			end
+		end
+	until #stack == 0
+
+	local rawlist = self:get(path, { recursive = true }, { raw = true }).node
+	local current
+	if rawlist then -- can be nil ;)
+		current = self:unpack(rawlist, path, false, true)
+	end
+
+	for newkey, newvalue in pairs(flat) do
+		local body, headers = self:request("PUT", "/v2/keys/" .. newkey, { prevExists = false, value = newvalue }, options)
+		if headers.status ~= 201 then
+			error(body, 2)
+		end
+	end
+
+	return current
 end
 
 return M

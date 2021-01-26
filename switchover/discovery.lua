@@ -13,39 +13,38 @@ json.cfg{ encode_use_tostring = true, encode_invalid_string = true }
 function M.discovery(args)
 	local tnts = { list = {}, kv = {} }
 	local endpoints = args.endpoints
+	assert(#endpoints > 0, "You muyst specify at least 1 endpoint for discovery")
 
 	local tree
-	if #args.endpoints == 0 or not args.endpoints[1]:match ":" then
+	if #args.endpoints == 1 and not args.endpoints[1]:match ":" then
 		if not global.etcd then
 			error(("Cannot discovery instance %s without etcd"):format(args.endpoints[1]), 0)
 		end
-		if #args.endpoints > 1 then
-			log.error("Too many endpoints to discovery in ETCD. Use cluster_name")
-			os.exit(1)
+
+		local appname = args.endpoints[1]
+		local shard
+		if appname:match("/") then
+			appname, shard = assert(appname:match("^(.+)/(.+)$"))
+			log.info("Discovering shard:%s inside app:%s", shard, appname)
 		end
+		log.info("Fetching %s from ETCD", appname)
 
-		local path = args.endpoints[1]
-		log.info("Fetching %s from ETCD", path)
-
-		local etcd_tree = global.etcd:getr(path)
+		local etcd_tree = global.etcd:getr(appname)
 		if not etcd_tree then
-			log.error("Path %s not found in ETCD: fullpath: %s/%s", path, global.etcd.prefix, path)
+			log.error("Path %s not found in ETCD: fullpath: %s/%s", appname, global.etcd.prefix, appname)
 			os.exit(1)
 		end
 
 		tree = Tree {
-			path = path,
+			path = appname,
 			etcd = global.etcd,
 			tree = etcd_tree,
+			shard = shard, -- can be nil, it means that Tree must contain single shard
 		}
-		if not tree.instances then
-			error(("Cannot find %s in ETCD"):format(path), 0)
-		end
-
 		log.verbose(yaml.encode(tree.tree))
 
 		local master, master_name = tree:master()
-		log.verbose("ETCD master of replicaset %s is %s (at %s)", path, master_name, master.box.listen)
+		log.verbose("ETCD master of replicaset %s is %s (at %s)", appname, master_name, master.box.listen)
 
 		endpoints = tree:instances()
 		global.tree = tree
@@ -135,14 +134,16 @@ end
 
 function M.resolve_and_discovery(instance, timeout, cluster_name)
 	local endpoints, look_at_etcd
-	if not instance:match(":") then
+	if instance:match(":") then
+		endpoints = { instance }
+	elseif instance:match("/") then
+		look_at_etcd = true
+	else
 		look_at_etcd = true
 		endpoints = { cluster_name }
 		if not cluster_name then
 			error("You must specify cluster_name (--cluster option)", 0)
 		end
-	else
-		endpoints = { instance }
 	end
 
 	local tnts = M.discovery {
@@ -174,12 +175,6 @@ end
 function M.run(args)
 	assert(args.command == "discovery")
 
-	if not args.endpoints and not global.etcd then
-		error("endpoints or etcd must be specified", 0)
-	end
-
-	if not args.endpoints then args.endpoints = {''} end
-
 	local tnts = M.discovery(args)
 	if #tnts.list == 0 then
 		error("No nodes discovered", 0)
@@ -206,10 +201,11 @@ function M.run(args)
 
 	for _, r in ipairs(replicaset:scored()) do
 		if etcd_master then
+			local _, name = global.tree:by_uuid(r:uuid())
 			if etcd_master.box.instance_uuid == r:uuid() then
-				log.info("%d etcd_master  %s", r:id(), r)
+				log.info("%d/%s etcd_master %s", r:id(), name, r)
 			else
-				log.info("%d etcd_replica %s", r:id(), r)
+				log.info("%d/%s etcd_replica %s", r:id(), name, r)
 			end
 		else
 			log.info("%d %s", r:id(), r)

@@ -4,7 +4,8 @@ services:
         image: tarantool/tarantool:1.x-centos7
         privileged: true
         environment:
-            TARANTOOL_INSTANCE_NAME: tnt1
+            TARANTOOL_INSTANCE_NAME: mysingle_001
+            TARANTOOL_APP_ETCD_PREFIX: /tarantool/mysingle
         depends_on:
             - etcd0
             - etcd1
@@ -16,7 +17,8 @@ services:
         image: tarantool/tarantool:1.x-centos7
         privileged: true
         environment:
-            TARANTOOL_INSTANCE_NAME: tnt2
+            TARANTOOL_INSTANCE_NAME: mysingle_002
+            TARANTOOL_APP_ETCD_PREFIX: /tarantool/mysingle
         depends_on:
             - etcd0
             - etcd1
@@ -28,7 +30,64 @@ services:
         image: tarantool/tarantool:1.x-centos7
         privileged: true
         environment:
-            TARANTOOL_INSTANCE_NAME: tnt3
+            TARANTOOL_INSTANCE_NAME: mysingle_003
+            TARANTOOL_APP_ETCD_PREFIX: /tarantool/mysingle
+        depends_on:
+            - etcd0
+            - etcd1
+            - etcd2
+        volumes:
+            - .:/opt/tarantool
+        command: tarantool init.lua
+
+    tnt11:
+        image: tarantool/tarantool:1.x-centos7
+        privileged: true
+        environment:
+            TARANTOOL_INSTANCE_NAME: mycluster_001_01
+            TARANTOOL_APP_ETCD_PREFIX: /tarantool/mycluster
+        depends_on:
+            - etcd0
+            - etcd1
+            - etcd2
+        volumes:
+            - .:/opt/tarantool
+        command: tarantool init.lua
+
+    tnt12:
+        image: tarantool/tarantool:1.x-centos7
+        privileged: true
+        environment:
+            TARANTOOL_INSTANCE_NAME: mycluster_001_02
+            TARANTOOL_APP_ETCD_PREFIX: /tarantool/mycluster
+        depends_on:
+            - etcd0
+            - etcd1
+            - etcd2
+        volumes:
+            - .:/opt/tarantool
+        command: tarantool init.lua
+
+    tnt21:
+        image: tarantool/tarantool:1.x-centos7
+        privileged: true
+        environment:
+            TARANTOOL_INSTANCE_NAME: mycluster_002_01
+            TARANTOOL_APP_ETCD_PREFIX: /tarantool/mycluster
+        depends_on:
+            - etcd0
+            - etcd1
+            - etcd2
+        volumes:
+            - .:/opt/tarantool
+        command: tarantool init.lua
+
+    tnt22:
+        image: tarantool/tarantool:1.x-centos7
+        privileged: true
+        environment:
+            TARANTOOL_INSTANCE_NAME: mycluster_002_02
+            TARANTOOL_APP_ETCD_PREFIX: /tarantool/mycluster
         depends_on:
             - etcd0
             - etcd1

@@ -1,25 +1,58 @@
 ---
 tarantool:
-  clusters:
-    tnt:
-      master: tnt1
-      replicaset_uuid: '5713e7b4-29d2-4b1c-b6ff-1f2f8bae0d28'
-  instances:
-    tnt1:
-      cluster: tnt
+  mysingle:
+    clusters:
+      mysingle:
+        master: mysingle_001
+        replicaset_uuid: '5713e7b4-29d2-4b1c-b6ff-1f2f8bae0d28'
+    instances:
+      mysingle_001:
+        cluster: mysingle
+        box:
+          instance_uuid: '1a154d2c-2aad-4785-b7fe-ae5ad41fc4b6'
+          listen: tnt1:3301
+      mysingle_002:
+        cluster: mysingle
+        box:
+          instance_uuid: '20ebffd7-f40e-4c26-8263-a2382f2edafe'
+          listen: tnt2:3301
+      mysingle_003:
+        cluster: mysingle
+        box:
+          listen: tnt3:3301
+          instance_uuid: 'ce343d92-3640-4146-8655-abb7d3501be7'
+    common:
       box:
-        instance_uuid: '1a154d2c-2aad-4785-b7fe-ae5ad41fc4b6'
-        listen: tnt1:3301
-    tnt2:
-      cluster: tnt
+        log_level: 5
+  mycluster:
+    clusters:
+      mycluster_001:
+        master: mycluster_001_01
+        replicaset_uuid: '60f6579a-2c91-4372-b2c6-41ce428451c8'
+      mycluster_002:
+        master: mycluster_002_02
+        replicaset_uuid: 'b55c08f0-8726-400b-83d6-bb704548e8de'
+    instances:
+      mycluster_001_01:
+        cluster: mycluster_001
+        box:
+          instance_uuid: '97bbed07-d878-498e-aee5-a0f54c6fa0ee'
+          listen: tnt11:3301
+      mycluster_001_02:
+        cluster: mycluster_001
+        box:
+          instance_uuid: '32ce4150-7ca6-451b-b5fe-9311498c351d'
+          listen: tnt12:3301
+      mycluster_002_01:
+        cluster: mycluster_002
+        box:
+          instance_uuid: '5df577f9-ac6e-4184-82f1-bf140788ec72'
+          listen: tnt21:3301
+      mycluster_002_02:
+        cluster: mycluster_002
+        box:
+          instance_uuid: '5ec25363-dde1-4e13-a70f-9f280ab22cf3'
+          listen: tnt22:3301
+    common:
       box:
-        instance_uuid: '20ebffd7-f40e-4c26-8263-a2382f2edafe'
-        listen: tnt2:3301
-    tnt3:
-      cluster: tnt
-      box:
-        listen: tnt3:3301
-        instance_uuid: 'ce343d92-3640-4146-8655-abb7d3501be7'
-  common:
-    box:
-      log_level: 5
+        log_level: 5

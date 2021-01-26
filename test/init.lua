@@ -33,7 +33,7 @@ end
 
 require 'config' {
 	master_selection_policy = 'etcd.cluster.master',
-	file          = 'instance.lua',
+	file          = 'instance_config.lua',
 	on_load       = function(_,cfg)
 		cfg.box.background = false
 	end;

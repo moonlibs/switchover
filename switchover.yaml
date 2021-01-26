@@ -1,6 +1,6 @@
 ---
 etcd:
-  prefix: /cloud
+  prefix: /tarantool
   timeout: 3
   endpoints:
     - http://etcd0:2379

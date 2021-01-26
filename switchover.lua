@@ -58,7 +58,7 @@ discovery:flag "-l" "--link-graph"
 	:default(false)
 
 discovery:argument "endpoints"
-	:args "0-1"
+	:args "1"
 	:description "host:port to tarantool or name of replicaset"
 	:convert(comma_split)
 

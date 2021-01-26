@@ -13,7 +13,10 @@ function Tree:new(opts)
 
 	assert(tree.clusters, "Cannot instance ETCD tree without /clusters")
 	assert(tree.instances, "Cannot instance ETCD tree without /instances")
-	return setmetatable({ tree = tree, etcd = etcd, path = path }, self)
+	if opts.shard then
+		assert(tree.clusters[opts.shard], "Cannot instance ETCD tree without /clusters/"..opts.shard)
+	end
+	return setmetatable({ tree = tree, etcd = etcd, path = path, shard = opts.shard }, self)
 end
 
 function Tree:refresh()
@@ -35,19 +38,20 @@ function Tree:by_uuid(instance_uuid)
 	return self:instance(name)
 end
 
-function Tree:cluster_path(cluster_name)
-	local master = self:master(cluster_name)
+function Tree:cluster_path()
+	local master = self:master(self.shard)
+	assert(self.tree.clusters[master.cluster], "cluster for "..master.cluster.." not found")
 	return fio.pathjoin(self.path, 'clusters', assert(master.cluster))
 end
 
-function Tree:master(cluster_name)
-	if cluster_name then
-		return self:instance(self.tree.clusters[cluster_name].master)
+function Tree:master()
+	if self.shard then
+		return self:instance(self.tree.clusters[self.shard].master)
 	end
 	assert(fun.length(self.tree.clusters) == 1, "ETCD tree must contain single cluster")
 
-	local master = next(self.tree.clusters)
-	return self:master(master)
+	local cluster_name = next(self.tree.clusters)
+	return self:instance(self.tree.clusters[cluster_name].master)
 end
 
 function Tree:is_master(instance_name)
@@ -59,7 +63,11 @@ function Tree:is_master(instance_name)
 end
 
 function Tree:instances()
-	return fun.iter(self.tree.instances):map(function(_, inst) return inst.box.listen end):totable()
+	local iterator = fun.iter(self.tree.instances)
+	if self.shard then
+		iterator = iterator:grep(function(_, inst) return inst.cluster == self.shard end)
+	end
+	return iterator:map(function(_, inst) return inst.box.listen end):totable()
 end
 
 return setmetatable(Tree, { __call = Tree.new })
