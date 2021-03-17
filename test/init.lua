@@ -1,4 +1,11 @@
 local fiber = require 'fiber'
+local fio = require 'fio'
+print(fio.cwd(), fio.abspath(fio.cwd()))
+print(fio.pathjoin(fio.abspath(fio.cwd()), ".rocks/share/lua/5.1/"))
+package.path = fio.pathjoin(
+	fio.abspath(fio.cwd()), ".rocks/share/lua/5.1/").."/?.lua"..";"..package.path
+require 'package.reload'
+
 do
 	local rpslimiter = setmetatable({
 		get = function(self, k, to)

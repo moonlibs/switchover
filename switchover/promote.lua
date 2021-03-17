@@ -11,6 +11,18 @@ local function fail(candidate)
 		candidate.endpoint), 0)
 end
 
+local function run_package_reload(tarantool, etcd)
+	if not tarantool.can_package_reload then
+		return true
+	end
+	if tarantool.has_etcd and not etcd then
+		log.error("ERROR: Can't run package.reload for %s because it is configured from ETCD",
+			tarantool)
+		return false
+	end
+	return tarantool:package_reload()
+end
+
 function M.run(args)
 	assert(args.command == "promote")
 
@@ -72,7 +84,9 @@ function M.run(args)
 		end
 
 		if args.with_reload then
-			candidate:package_reload()
+			if not run_package_reload(candidate, etcd) then
+				log.error("ERROR: Failed to execute package.reload on new master")
+			end
 		end
 	elseif ok then
 		log.warn("Promote failed but replicaset is consistent. Reason: %s", err)

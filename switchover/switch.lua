@@ -157,6 +157,52 @@ local function switch(opts)
 	return true, err
 end
 
+local function run_package_reload(tarantool, etcd)
+	if not tarantool.can_package_reload then
+		return true
+	end
+	if tarantool.has_etcd and not etcd then
+		log.error("ERROR: Can't run package.reload for %s because it is configured from ETCD",
+			tarantool)
+		return false
+	end
+	return tarantool:package_reload()
+end
+
+local function run_switch(etcd, replicaset, args)
+	local master = args.src
+	local candidate = args.dst
+
+	local ok, err
+	if etcd then
+		ok, err = Mutex:new(etcd, global.tree:cluster_path()..'/switchover')
+			:atomic(
+				{ -- key
+					key = ('switchover:%s:%s:%s'):format(replicaset.uuid, master:uuid(), candidate:uuid()),
+					ttl = 3*args.max_lag,
+				},
+				switch, -- function
+				{ -- arguments of the function
+					src = master,
+					dst = candidate,
+					max_lag = args.max_lag
+				}
+			)
+	else
+		log.warn("WARN: Doing switch %s -> %s without ETCD lock",
+			master.endpoint, candidate.endpoint)
+
+		local r = { pcall(switch, { src = master, dst = candidate, max_lag = args.max_lag }) }
+		local pcall_ok = table.remove(r, 1)
+		if pcall_ok then
+			ok, err = unpack(r)
+		else
+			ok, err = pcall_ok, r[1]
+		end
+	end
+	return ok, err
+end
+
 function M.run(args)
 	assert(args.command == "switch")
 	local tnts, candidate = require "switchover.discovery".resolve_and_discovery(
@@ -227,31 +273,16 @@ function M.run(args)
 		return 1
 	end
 
-	local ok, err
-	if etcd and not args.no_etcd then
-		ok, err = Mutex:new(etcd, global.tree:cluster_path()..'/switchover'):atomic({
-				key = ('switchover:%s:%s:%s'):format(repl.uuid, master:uuid(), candidate:uuid()),
-				ttl = 3*args.max_lag,
-			},
-			switch,
-			{
-				src = master,
-				dst = candidate,
-				max_lag = args.max_lag
-			}
-		)
-	else
-		local r = { pcall(switch, { src = master, dst = candidate, max_lag = args.max_lag }) }
-		local pcall_ok = table.remove(r, 1)
-		if pcall_ok then
-			ok, err = unpack(r)
-		else
-			ok, err = pcall_ok, r[1]
-		end
+	if args.no_etcd then
+		etcd = false
 	end
 
+	local ok, err = run_switch(etcd, repl, {
+		src = master, dst = candidate, max_lag = args.max_lag,
+	})
+
 	if not err then
-		log.info("Switch %s/%s -> %s/%s was successfully done. Performing discovery",
+		log.info("Switch %s/%s -> %s/%s was successfully done",
 			master:id(), master.endpoint, candidate:id(), candidate.endpoint)
 
 		if etcd then
@@ -267,8 +298,10 @@ function M.run(args)
 			global.tree:refresh()
 		end
 
-		if args.with_reload and candidate.can_package_reload then
-			candidate:package_reload()
+		if args.with_reload then
+			log.info("Perfoming package.reload")
+			run_package_reload(candidate, etcd)
+			run_package_reload(master, etcd)
 		end
 	elseif ok then
 		log.warn("Switchover failed but replicaset is consistent. Reason: %s", err)

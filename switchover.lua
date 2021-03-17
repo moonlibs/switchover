@@ -3,6 +3,7 @@ local log = require 'log'
 local fio = require 'fio'
 local yaml = require 'yaml'
 local json = require 'json'
+local clock = require 'clock'
 
 local function comma_split(s) return s:split "," end
 
@@ -86,7 +87,7 @@ promote:flag "-r" "--with-reload"
 	:target "with_reload"
 	:description "In case of successfull promote calls package.reload on new master"
 	:show_default(true)
-	:default(false)
+	:default(true)
 
 promote:flag "--no-etcd"
 	:target "no_etcd"
@@ -124,7 +125,7 @@ switch:flag "-r" "--with-reload"
 	:target "with_reload"
 	:description "In case of successfull promote calls package.reload on new master"
 	:show_default(true)
-	:default(false)
+	:default(true)
 
 local heal = switchover:command "heal"
 	:summary "Heals ETCD /cluster/master"
@@ -193,5 +194,33 @@ if args.etcd then
 		autoconnect  = true,
 	}
 end
+
+package.loaded.log = setmetatable({
+	__log = function(level, ...)
+		local lvls = { info = 'I', warn = 'W', error = 'E', verbose = 'V', debug = 'D' }
+		local fmt, data
+		if select('#', ...) == 1 then
+			local x = ...
+			if type(x) == 'table' then
+				fmt, data = '%s', { json.encode(x) }
+			else
+				fmt, data = '%s', { x }
+			end
+		else
+			fmt = ...
+			data = { select(2, ...) }
+		end
+
+		fmt = '%s +%.1fms %s> '..fmt
+		local now = clock.time()
+		table.insert(data, 1, lvls[level] or 'U')
+		table.insert(data, 1, (now-global.start_at)*1000)
+		table.insert(data, 1, os.date("%FT%T", now)..("%.3f"):format(now-math.floor(now)):sub(2))
+		return log[level](fmt, unpack(data))
+	end,
+	info = function(...)  return package.loaded.log.__log('info', ...) end,
+	error = function(...) return package.loaded.log.__log('error', ...) end,
+	warn = function(...)  return package.loaded.log.__log('warn', ...) end,
+}, { __index = log })
 
 os.exit(require('switchover.'..args.command).run(args) or 0)

@@ -147,9 +147,15 @@ end
 
 function Tarantool:_get(opts)
 	if not self.cached_info or not self.cached_cfg or (opts or {}).update then
-		self.cached_info, self.cached_cfg, self.can_package_reload, self.has_vshard = self.conn:eval [[
-			return box.info, box.cfg, type(package.reload) == 'function', rawget(_G, 'vshard') ~= nil
-		]]
+		self.cached_info, self.cached_cfg, self.can_package_reload, self.has_vshard, self.has_etcd =
+			self.conn:eval [[
+				return
+					box.info,
+					box.cfg,
+					type(package.reload) ~= 'nil',
+					rawget(_G, 'vshard') ~= nil,
+					type((package.loaded.config or {}).etcd) ~= 'nil'
+			]]
 	end
 	return self.cached_info, self.cached_cfg
 end
@@ -171,6 +177,7 @@ function Tarantool:package_reload()
 		package.reload()
 		return box.info, box.cfg
 	]]
+	return true
 end
 
 return setmetatable(Tarantool, { __call = Tarantool.new })
