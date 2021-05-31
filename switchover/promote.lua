@@ -27,7 +27,7 @@ function M.run(args)
 	assert(args.command == "promote")
 
 	local tnts, candidate = require "switchover.discovery".resolve_and_discovery(
-		args.instance, args.timeout, args.cluster
+		args.instance, args.discovery_timeout, args.cluster
 	)
 
 	local repl = Replicaset(tnts.list)
@@ -44,6 +44,10 @@ function M.run(args)
 		log.error("Candidate '%s' does not have live upstreams", candidate.endpoint)
 		log.warn("Candidate %s", candidate)
 		fail(candidate)
+	end
+	if candidate.has_vshard and not args.allow_vshard then
+		log.error("Can't promote: instance is in vshard cluster")
+		return 1
 	end
 
 	-- Check that all nodes may receive data from candidate
@@ -99,7 +103,7 @@ function M.run(args)
 		endpoints = fun.iter(repl.replica_list)
 			:map(function(t)return t.endpoint end)
 			:totable(),
-		timeout = args.timeout,
+		timeout = args.discovery_timeout,
 	}
 end
 

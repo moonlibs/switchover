@@ -15,6 +15,8 @@ function M.discovery(args)
 	local endpoints = args.endpoints
 	assert(#endpoints > 0, "You muyst specify at least 1 endpoint for discovery")
 
+	local discovery_timeout = args.discovery_timeout or args.timeout or 5
+
 	local tree
 	if #args.endpoints == 1 and not args.endpoints[1]:match ":" then
 		if not global.etcd then
@@ -51,7 +53,7 @@ function M.discovery(args)
 	end
 
 	local discovery_queue = {
-		deadline = fiber.time() + (args.discovery_timeout or 5),
+		deadline = fiber.time() + discovery_timeout,
 		chan = fiber.channel(math.max(#endpoints, 3)),
 		count = 0,
 		seen = {},
@@ -196,6 +198,7 @@ function M.run(args)
 
 	local etcd_master
 	if global.tree then
+		global.tree:refresh()
 		etcd_master = global.tree:master()
 	end
 

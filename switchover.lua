@@ -17,6 +17,9 @@ local switchover = require 'argparse'()
 	:help_vertical_space(1)
 	:help_description_margin(60)
 
+switchover:flag "--arguments-only"
+	:hidden(true)
+
 switchover:option "-c" "--config"
 	:target "config"
 	:default "/etc/switchover/config.yaml"
@@ -78,8 +81,8 @@ promote:option "--max-lag"
 	:default(1)
 
 promote:option "-t" "--timeout"
-	:target "timeout"
-	:description "Timeout of the promote (in seconds)"
+	:target "discovery_timeout"
+	:description "Timeout of discovery for promote (in seconds)"
 	:show_default(true)
 	:default(5)
 
@@ -92,6 +95,24 @@ promote:flag "-r" "--with-reload"
 promote:flag "--no-etcd"
 	:target "no_etcd"
 	:description "Disables ETCD mutexes and discovery"
+	:default(false)
+	:show_default(true)
+
+promote:flag "--no-check-downstreams"
+	:target "no_check_downstreams"
+	:description "Disables checking of live downstreams"
+	:default(false)
+	:show_default(true)
+
+promote:flag "--no-check-upstreams"
+	:target "no_check_upstreams"
+	:description "Disables checking of live upstreams"
+	:default(false)
+	:show_default(true)
+
+promote:flag "--allow-vshard"
+	:target "allow_vshard"
+	:description "Allows switch for vshard cluster (Use for your own risk)"
 	:default(false)
 	:show_default(true)
 
@@ -110,8 +131,8 @@ switch:option "--max-lag"
 	:default(1)
 
 switch:option "-t" "--timeout"
-	:target "timeout"
-	:description "Timeout of the switch (in seconds)"
+	:target "discovery_timeout"
+	:description "Timeout of discovery for switch (in seconds)"
 	:show_default(true)
 	:default(5)
 
@@ -126,6 +147,12 @@ switch:flag "-r" "--with-reload"
 	:description "In case of successfull promote calls package.reload on new master"
 	:show_default(true)
 	:default(true)
+
+switch:flag "--allow-vshard"
+	:target "allow_vshard"
+	:description "Allows switch for vshard cluster (Use for your own risk)"
+	:default(false)
+	:show_default(true)
 
 local heal = switchover:command "heal"
 	:summary "Heals ETCD /cluster/master"
@@ -222,5 +249,10 @@ package.loaded.log = setmetatable({
 	error = function(...) return package.loaded.log.__log('error', ...) end,
 	warn = function(...)  return package.loaded.log.__log('warn', ...) end,
 }, { __index = log })
+
+if args.arguments_only then
+	log.info(yaml.encode(args))
+	os.exit(1)
+end
 
 os.exit(require('switchover.'..args.command).run(args) or 0)

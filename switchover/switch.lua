@@ -206,7 +206,7 @@ end
 function M.run(args)
 	assert(args.command == "switch")
 	local tnts, candidate = require "switchover.discovery".resolve_and_discovery(
-		args.instance, args.timeout, args.cluster)
+		args.instance, args.discovery_timeout, args.cluster)
 
 	local repl = Replicaset(tnts.list)
 	local master = repl:master()
@@ -235,11 +235,11 @@ function M.run(args)
 	log.info("Candidate %s can be next leader (current: %s/%s). Running replication check (safe)",
 		candidate, master:id(), master.endpoint)
 
-	if master.has_vshard then
+	if master.has_vshard and not args.allow_vshard then
 		log.error("Can't do switch because master is in vshard cluster")
 		return 1
 	end
-	if candidate.has_vshard then
+	if candidate.has_vshard and not args.allow_vshard then
 		log.error("Can't do switch because candidate is in vshard cluster")
 		return 1
 	end
@@ -314,7 +314,7 @@ function M.run(args)
 		endpoints = fun.iter(repl.replica_list)
 			:map(function(t)return t.endpoint end)
 			:totable(),
-		timeout = args.timeout,
+		timeout = args.discovery_timeout,
 	}
 end
 

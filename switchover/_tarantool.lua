@@ -161,9 +161,6 @@ function Tarantool:_get(opts)
 end
 
 function Tarantool:force_promote()
-	if self.has_vshard then
-		error("Cant force_promote: instance is in vshard cluster", 2)
-	end
 	self.cached_info, self.cached_cfg = self.conn:eval "box.cfg{ read_only = false } return box.info, box.cfg"
 end
 
