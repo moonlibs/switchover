@@ -137,7 +137,7 @@ function M:request(method, path, query, options, with_discovery)
 		end
 	end
 	local body
-	if r.headers["content-type"]:match("^application/json") then
+	if r.body and r.headers["content-type"] and r.headers["content-type"]:match("^application/json") then
 		local ok, data = pcall(json.decode, r.body)
 		if not ok then
 			return false, data, r
