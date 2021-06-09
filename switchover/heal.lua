@@ -32,7 +32,7 @@ function M.etcd_switch(args)
 	log.info("Changing master in ETCD: %s -> %s", etcd_master_name, etcd_candidate_name)
 
 	-- Perform CAS
-	local r = global.etcd:set(global.tree.path.."/clusters/"..etcd_master.cluster.."/master", etcd_candidate_name, { prevValue = etcd_master_name })
+	local r = global.etcd:set(global.tree.path.."/clusters/"..etcd_master.cluster.."/master", etcd_candidate_name, { prevValue = etcd_master_name }, { leader = true })
 	log.info("ETCD response: %s", json.encode(r))
 
 	if r.action == 'compareAndSwap' then

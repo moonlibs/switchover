@@ -1,6 +1,8 @@
 --- This module provides connector to ETCD
 local M = {}
 local uri = require 'net.url'
+local fiber = require 'fiber'
+local fun = require 'fun'
 
 local log = require 'log'
 local json = require 'json'
@@ -103,6 +105,16 @@ end
 -- @field action
 -- @tfield etcdNode node
 
+---
+--
+function M:_endpoint(opts)
+	opts = opts or {}
+	if not opts.leader then
+		return self.endpoints[math.random(#self.endpoints)]
+	end
+	return self.leader
+end
+
 --- Performs general request to ETCD.
 -- @param method http method.
 -- @param path url path.
@@ -118,7 +130,8 @@ function M:request(method, path, query, options, with_discovery)
 		self:discovery()
 	end
 
-	local endpoint = self.endpoints[math.random(#self.endpoints)]
+	local endpoint = self:_endpoint(options)
+
 	local url = uri.parse(endpoint .. "/" .. path)
 	url:setQuery(deepmerge(url.query, query))
 	url:normalize()
@@ -151,10 +164,29 @@ function M:request(method, path, query, options, with_discovery)
 	return body, r
 end
 
+function M:_raw_request(endpoint, path)
+	local url = uri.parse(("%s/%s"):format(endpoint, path))
+	url:normalize()
+
+	local s = clock.time()
+	local res = self.client.request("GET", tostring(url), "", self.client)
+
+	trace("GET %s => %s:%s (%.4f)", tostring(url), res.status, res.reason, clock.time() - s)
+
+	local ok, data = pcall(json.decode, res.body)
+	if not ok then
+		trace("%s: JSON decode of '%s' failed with: %s", url, res.body, data)
+		data = nil
+	end
+
+	return res.status, data, res.headers or {}
+end
+
 ---
 -- Discovers ClientURls from ETCD (updates self.endpoints)
 function M:discovery()
 	local endpoints = {}
+	local leaders = {}
 	local peers = {}
 	for _, p in ipairs(self.__peers) do
 		peers[p] = true
@@ -162,26 +194,12 @@ function M:discovery()
 	for _, p in ipairs(self.endpoints) do
 		peers[p] = true
 	end
+
 	for endpoint in pairs(peers) do
-		local url = uri.parse(("%s/%s"):format(endpoint, "/v2/members"))
-		url:normalize()
+		local status, body = self:_raw_request(endpoint, "/v2/members")
+		if status ~= 200 or type(body) ~= 'table' then return end
 
-		local s = clock.time()
-		local res = self.client.request("GET", tostring(url), "", self.client)
-
-		trace("GET %s => %s:%s (%.4f)", tostring(url), res.status, res.reason, clock.time() - s)
-
-		if res.status ~= 200 then
-			goto continue
-		end
-
-		local ok, data = pcall(json.decode, res.body)
-		if not ok then
-			trace("JSON decode of '%s' failed with: %s", res.body, data)
-			goto continue
-		end
-
-		for _, member in pairs(data.members) do
+		for _, member in pairs(body.members) do
 			for _, u in pairs(member.clientURLs) do
 				if not endpoints[u] then
 					table.insert(endpoints, u)
@@ -189,8 +207,41 @@ function M:discovery()
 				end
 			end
 		end
-		::continue::
 	end
+
+	local function leader_discovery(endpoint)
+		local status, body = self:_raw_request(endpoint, "/v2/members/leader")
+		if status ~= 200 or type(body) ~= 'table' then return end
+
+		local leader = body.clientURLs[1]:gsub("/*$", "")
+		leaders[leader] = (leaders[leader] or 0) + 1
+	end
+
+	local fs = {}
+	for endpoint in pairs(endpoints) do
+		local f = fiber.new(leader_discovery, endpoint)
+		f:set_joinable(true)
+		fs[#fs+1] = f
+	end
+	for _, f in ipairs(fs) do f:join() end
+
+	if fun.length(leaders) == 1 then
+		self.leader = next(leaders)
+	elseif fun.length(leaders) > 1 then
+		local total = fun.iter(leaders):map(function(_,v) return v end):sum()
+		local leader_candidate = fun.iter(leaders):max_by(function(_,v) return v end)
+
+		if leaders[leader_candidate] >= math.ceil((total+1)/2) then
+			self.leader = leader_candidate
+		else
+			error(("Can't choose leader from: %s. ETCD is in split brain"):format(
+				table.concat(fun.totable(leaders)",")), 0)
+		end
+	end
+
+	assert(self.leader, "No leader found")
+	trace("Choosing leader: %s", self.leader)
+
 	assert(#endpoints > 0, "No endpoints discovered")
 	self.endpoints = { unpack(endpoints) }
 	return self.endpoints
@@ -309,8 +360,8 @@ end
 -- @param path path to subtree
 -- @param options options of request.
 -- @return subtree from ETCD
-function M:getr(path, options)
-	return self:get(path, { recursive = true }, options)
+function M:getr(path, flags, options)
+	return self:get(path, deepmerge(flags, { recursive = true }), options)
 end
 
 --- Returns listing of keys from subtree

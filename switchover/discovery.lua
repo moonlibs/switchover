@@ -31,7 +31,7 @@ function M.discovery(args)
 		end
 		log.info("Fetching %s from ETCD", appname)
 
-		local etcd_tree = global.etcd:getr(appname)
+		local etcd_tree = global.etcd:getr(appname, { quorum = true }, { leader = true })
 		if not etcd_tree then
 			log.error("Path %s not found in ETCD: fullpath: %s/%s", appname, global.etcd.prefix, appname)
 			os.exit(1)

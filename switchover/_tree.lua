@@ -20,7 +20,7 @@ function Tree:new(opts)
 end
 
 function Tree:refresh()
-	self.tree = self.etcd:getr(self.path)
+	self.tree = self.etcd:getr(self.path, { quorum = true }, { leader = true })
 	return self
 end
 
